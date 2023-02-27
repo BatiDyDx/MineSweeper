@@ -1,16 +1,26 @@
+use std::cmp::{min, max};
 use crate::display;
-use rand::prelude::SliceRandom;
+use crate::grid::{Grid, State, Content};
 
-struct Action {
-  x: u8,
-  y: u8,
-  mov: char // Action to be performed, i.e. uncheck, tag, quit, etc
-}
-
-enum GameState {
+pub enum GameState {
   Win,
   Loss,
-  Continue
+  Continue,
+  Quit
+}
+
+pub struct Position {
+  pub x: usize,
+  pub y: usize
+}
+
+pub enum Movement {
+  Up, Down, Left, Right,  // Movements across the board
+  Cord(Position),         // Movement representing a new position
+  Check,                  // Check a cell
+  Tag,                    // Tag/Untag a cell
+  Quit                    // Quit game
+  // Restart maybe?
 }
 
 pub enum Difficulty {
@@ -19,85 +29,36 @@ pub enum Difficulty {
   Hard
 }
 
-pub enum Content {
-  Bomb,
-  Free(u8)
-}
+pub fn run_game(dif: Difficulty) -> GameState {
+  let (size, mine_count) = game_settings(dif);
+  let mut grid = Grid::new(size, mine_count);
+  grid.set();
 
-pub enum State {
-  Checked,
-  Unchecked,
-  Tagged
-}
+  let mut pos: Position = Position {x: 0, y: 0};
+  let mut state = GameState::Continue;
 
-pub struct Cell {
-  pub cont: Content,
-  pub state: State
-}
-
-pub struct Grid {
-  pub size: u8,
-  pub mines: u8,
-  pub unchecked_count: u8,
-  pub cells: Vec<Vec<Cell>>
-}
-
-fn get_action(grid: &mut Grid) -> Action {
-  Action { x: 0, y: 0, mov: 'q' }
-}
-
-fn get_game_state(grid: &mut Grid, action: Action) -> GameState {
-  let (x, y, mov) = (action.x, action.y, action.mov);
-  if mov == 'q' {
-    todo!();
-    return GameState::Loss;
-  }
-  
-  let row = grid.cells
-                                    .get_mut(y as usize)
-                                    .unwrap();
-  //grid.cells[action.x as usize][action.y as usize] = Cell;
-  let cell = row
-                                .get_mut(x as usize)
-                                .unwrap();
-  if mov == 'c' {
-    match cell.state {
-      State::Checked => (),
-      _ => {
-        if let Content::Bomb = cell.cont {
-          return GameState::Loss;
-        }
-        cell.state = State::Unchecked;
-      }
-    }
-  } else if mov == 't' {
-    match cell.state {
-      State::Checked => (),
-      State::Unchecked => cell.state = State::Tagged,
-      State::Tagged  => cell.state = State::Unchecked
+  while let GameState::Continue = state {
+    display::update_display(&grid, (pos.x, pos.y));
+    let mov = display::get_input();
+    match mov {
+      // Its done this way to avoid overflow
+      Movement::Up => pos.y = max(1, pos.y) - 1,
+      Movement::Left => pos.x = max(1, pos.x) - 1,
+      Movement::Down => pos.y = min(grid.size - 1, pos.y + 1),
+      Movement::Right => pos.x = min(grid.size - 1, pos.x + 1),
+      Movement::Cord(new_pos) => pos = new_pos,
+      Movement::Quit => state = GameState::Quit,
+      Movement::Tag => grid.tag_cell(&pos),
+      Movement::Check => state = grid.uncheck_cell(&pos)
     }
   }
-  GameState::Continue
+
+  grid.display_solved_grid();
+  // TODO: interfaz previa a quitar el juego
+  state
 }
 
-pub fn run_game(dif: Difficulty) -> bool {
-  let mut grid = Grid::init_grid(dif);
-
-  let result = loop {
-    display::display_grid(&grid);
-    let action = get_action(&mut grid);
-    let state = get_game_state(&mut grid, action);
-    match state {
-      GameState::Loss => break false,
-      GameState::Win  => break true,
-      GameState::Continue => ()
-    }
-  };
-
-  result
-}
-
-fn game_settings(difficulty: Difficulty) -> (u8, u8) {
+fn game_settings(difficulty: Difficulty) -> (usize, usize) {
   return match difficulty {
     Difficulty::Easy => (10, 15),
     Difficulty::Medium => (15, 30),
@@ -116,38 +77,43 @@ impl Difficulty {
 }
 
 impl Grid {
-  pub fn init_grid(difficulty: Difficulty) -> Grid {
-    let (size, mines) = game_settings(difficulty);
-    let mut positions: Vec<(u8,u8)> = vec![];
-    for i in 1..size {
-      for j in 1..size {
-        positions.push((i,j));
-      }
-    }
-    let mut rng = rand::thread_rng();
-    
-    let mine_positions: Vec<(u8,u8)> = positions
-                            .choose_multiple(&mut rng, mines as usize)
-                            .cloned()
-                            .collect();
-                            
-    let mut cells: Vec<Vec<Cell>> = vec![];
-    for i in 1..size {
-      let mut row: Vec<Cell> = vec![];
-      for j in 1..size {
-        let cell;
-        if mine_positions.contains(&(i,j)) {
-          cell = Cell {cont: Content::Bomb, state: State::Unchecked};
-        } else {
-          cell = Cell {cont: Content::Free(0), state: State::Unchecked};
-        }
-        row.push(cell);
-      }
-      cells.push(row);
-    }
-
-    Grid {
-      size, mines, unchecked_count: 0, cells
+  fn tag_cell(self: &mut Self, pos: &Position) {
+    let cell = self.cells
+                  .get_mut(pos.y)
+                  .unwrap()
+                  .get_mut(pos.x)
+                  .unwrap();
+    match cell.state {
+      State::Checked => (),
+      State::Tagged => cell.state = State::Unchecked,
+      State::Unchecked => cell.state = State::Tagged
     }
   }
+
+  fn uncheck_cell(self: &mut Self, pos: &Position) -> GameState {
+    let cell = self.cells
+                          .get_mut(pos.y)
+                          .unwrap()
+                          .get_mut(pos.x)
+                          .unwrap();
+    match cell.state {
+      State::Unchecked => {
+        cell.state = State::Checked;
+        if let Content::Bomb = cell.cont {
+          return GameState::Loss;
+        }
+        self.unchecked_count += 1;
+      },
+      _ => ()
+    }
+    if self.unchecked_count + self.mine_count == self.size * self.size {
+      return GameState::Win;
+    }
+    GameState::Continue
+  }
+  
+  pub fn update_grid() {
+    ()
+  }
+  
 }

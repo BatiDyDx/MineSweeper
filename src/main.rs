@@ -1,28 +1,31 @@
-use std::io::{self, Write};
+use ncurses::*;
 
-use game::Difficulty;
+mod grid;
 mod game;
 mod display;
 
-fn get_difficulty() -> Difficulty {
-  print!("Ingrese la dificultad [1,2,3]: ");
-  let _ = io::stdout().flush();
-  let stdin = io::stdin();
-  let mut input_dif = String::new();
-  stdin.read_line(&mut input_dif).expect("Could not read stdio");
-  let input_dif = input_dif
-                      .trim()
-                      .parse::<u8>()
-                      .expect("Input not valid");
-  Difficulty::from_int(input_dif)
+// Defer golang-like system implementation
+// Reference: https://stackoverflow.com/questions/29963449/golang-like-defer-in-rust
+struct ScopeCallback<F: FnMut()> {
+  callback: F
 }
 
-fn main() {
-  let result = game::run_game(get_difficulty());
-  if result {
-    println!("YOU WIN!!");
-  } else {
-    println!("It's a defeat");
+impl<F: FnMut()> Drop for ScopeCallback<F> {
+  fn drop(&mut self) {
+      (self.callback)();
   }
 }
 
+macro_rules! defer {
+    ($e: expr) => {
+      let _scope_call = ScopeCallback { callback: || -> () { $e; } };
+    };
+}
+
+fn main() {
+  let dif = display::get_difficulty();
+  display::start_display();
+  let result = game::run_game(dif);
+  endwin();
+  display::handle_result(result);
+}

@@ -1,0 +1,16 @@
+Entrada por terminal
+- Dificultad como un entero [1,2,3]
+
+Salida por terminal
+- Mensaje acerca de resultado obtenido en el juego
+"Ganaste!!", "Perdiste", "Abandonaste", etc
+
+Entrada por interfaz
+- Flechas para seleccionar la casilla
+- Entrada numerica para seleccionar casilla (1, 1) por ej.
+- Entrada alfabetica para ordenar accion 
+    q: salir, t: etiquetar casilla, c: explorar casilla, r: reiniciar
+
+
+Salida por interfaz
+- Tablero actualizable
